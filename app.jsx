@@ -39,6 +39,23 @@ function saveTasks(username, tasks){
   try{ localStorage.setItem(tasksKey(username), JSON.stringify(tasks)); }catch(e){}
 }
 
+function renameUserKey(oldName, newName){
+  const users = loadUsers();
+  if(!(oldName in users)) return false;
+  if(newName in users) return false;
+  users[newName] = users[oldName];
+  delete users[oldName];
+  saveUsers(users);
+  try{
+    const raw = localStorage.getItem(tasksKey(oldName));
+    if(raw != null){
+      localStorage.setItem(tasksKey(newName), raw);
+      localStorage.removeItem(tasksKey(oldName));
+    }
+  }catch(e){}
+  return true;
+}
+
 function loadTheme(){
   try{ return localStorage.getItem(THEME_KEY) || "dark"; }catch(e){ return "dark"; }
 }
@@ -155,6 +172,39 @@ function MailIcon(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3.5" y="5.5" width="17" height="13" rx="2.2" />
       <path d="M4 7l8 6 8-6" />
+    </svg>
+  );
+}
+function GearIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M17.6 6.4l-1.55 1.55M7.95 16.05L6.4 17.6M17.6 17.6l-1.55-1.55M7.95 7.95L6.4 6.4" />
+    </svg>
+  );
+}
+function BackIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+function ListIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6h12M8 12h12M8 18h12" />
+      <circle cx="3.5" cy="6" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="3.5" cy="18" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function CalendarIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.2" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
     </svg>
   );
 }
@@ -486,7 +536,7 @@ function Task({ task, onToggle, onDelete }){
 
 /* ---------------- main to-do screen ---------------- */
 
-function TodoScreen({ username, theme, onToggleTheme, onLogout }){
+function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange }){
   const [tasks, setTasks] = useState(() => loadTasks(username));
   const [filter, setFilter] = useState("active");
   const [showAdd, setShowAdd] = useState(false);
@@ -496,18 +546,51 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
   const modalTextRef = useRef(null);
 
   const [showSidebar, setShowSidebar] = useState(false);
+  const [sidebarView, setSidebarView] = useState("menu");
+  const [toasts, setToasts] = useState([]);
+  const toastTimers = useRef({});
+
+  const pushToast = (message, kind = "added") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, kind }]);
+    toastTimers.current[id] = setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+      delete toastTimers.current[id];
+    }, 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      Object.values(toastTimers.current).forEach(clearTimeout);
+    };
+  }, []);
+
+  const [accountVersion, setAccountVersion] = useState(0);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
 
+  const [editUsername, setEditUsername] = useState(username);
+  const [usernameError, setUsernameError] = useState("");
+  const [usernameSuccess, setUsernameSuccess] = useState("");
+
+  const [editEmail, setEditEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [emailSuccess, setEmailSuccess] = useState("");
+
   const account = useMemo(() => {
     const users = loadUsers();
     const acc = users[username];
     if(acc && typeof acc === "object") return acc;
     return { firstName: username, lastName: "", email: "" };
-  }, [username, showSidebar]);
+  }, [username, accountVersion]);
+
+  useEffect(() => {
+    setEditUsername(username);
+    setEditEmail(account.email || "");
+  }, [username, accountVersion]);
 
   const displayName = account.firstName || username;
   const initials = ((account.firstName ? account.firstName[0] : username[0]) +
@@ -516,11 +599,16 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
   const openSidebar = () => setShowSidebar(true);
   const closeSidebar = () => {
     setShowSidebar(false);
+    setSidebarView("menu");
     setCurrentPassword("");
     setNewPassword("");
     setConfirmNewPassword("");
     setPwError("");
     setPwSuccess("");
+    setUsernameError("");
+    setUsernameSuccess("");
+    setEmailError("");
+    setEmailSuccess("");
   };
 
   const changePassword = (e) => {
@@ -546,10 +634,60 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
     const base = acc && typeof acc === "object" ? acc : {};
     users[username] = { ...base, password: newPassword };
     saveUsers(users);
+    setAccountVersion(v => v + 1);
     setPwSuccess("Password updated.");
     setCurrentPassword("");
     setNewPassword("");
     setConfirmNewPassword("");
+  };
+
+  const changeUsername = (e) => {
+    e.preventDefault();
+    setUsernameError("");
+    setUsernameSuccess("");
+    const next = editUsername.trim();
+
+    if(next.length < 3){
+      setUsernameError("Username should be at least 3 characters.");
+      return;
+    }
+    if(next === username){
+      setUsernameError("That's already your username.");
+      return;
+    }
+    const users = loadUsers();
+    if(next in users){
+      setUsernameError("That username is already taken.");
+      return;
+    }
+    const ok = renameUserKey(username, next);
+    if(!ok){
+      setUsernameError("Couldn't update username. Try again.");
+      return;
+    }
+    saveSession(next);
+    setUsernameSuccess("Username updated.");
+    setAccountVersion(v => v + 1);
+    if(onUsernameChange) onUsernameChange(next);
+  };
+
+  const changeEmail = (e) => {
+    e.preventDefault();
+    setEmailError("");
+    setEmailSuccess("");
+    const mail = editEmail.trim();
+
+    if(!GMAIL_RE.test(mail)){
+      setEmailError("Email must be a valid address ending in @gmail.com.");
+      return;
+    }
+    const users = loadUsers();
+    const acc = users[username];
+    const base = acc && typeof acc === "object" ? acc : {};
+    users[username] = { ...base, email: mail };
+    saveUsers(users);
+    setAccountVersion(v => v + 1);
+    setEmailSuccess("Email updated.");
   };
 
   useEffect(() => { saveTasks(username, tasks); }, [tasks, username]);
@@ -582,17 +720,26 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
       category: null,
     };
     setTasks(prev => [newTask, ...prev]);
+    pushToast("Task added", "added");
     closeAdd();
   };
 
   const toggleTask = (id) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+    setTasks(prev => prev.map(t => {
+      if(t.id !== id) return t;
+      const next = { ...t, done: !t.done };
+      pushToast(next.done ? "Task completed" : "Task marked active", next.done ? "added" : "removed");
+      return next;
+    }));
   };
   const deleteTask = (id) => {
+    const target = tasks.find(t => t.id === id);
     setTasks(prev => prev.filter(t => t.id !== id));
+    pushToast(target ? `"${target.text.slice(0, 40)}" removed` : "Task removed", "removed");
   };
   const clearCompleted = () => {
     setTasks(prev => prev.filter(t => !t.done));
+    pushToast("Completed tasks cleared", "removed");
   };
 
   const visible = useMemo(() => {
@@ -608,11 +755,174 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
 
   const remaining = tasks.filter(t => !t.done).length;
 
+  const { todayCount, upcomingCount } = useMemo(() => {
+    const todayStr = (() => {
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+    })();
+    let today = 0, upcoming = 0;
+    tasks.forEach(t => {
+      if(t.done || !t.dueDate) return;
+      if(t.dueDate === todayStr) today++;
+      else if(t.dueDate > todayStr) upcoming++;
+    });
+    return { todayCount: today, upcomingCount: upcoming };
+  }, [tasks]);
+
   return (
     <div className="app">
+      <div className="toast-stack" aria-live="polite">
+        {toasts.map(t => (
+          <div key={t.id} className={"toast" + (t.kind === "removed" ? " removed" : "")}>
+            <span className="toast-icon">{t.kind === "removed" ? <CloseIcon /> : <CheckIcon />}</span>
+            <span className="toast-text">{t.message}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className={"sidebar-overlay" + (showSidebar ? " show" : "")} onClick={closeSidebar}></div>
+
+      <div className={"sidebar" + (showSidebar ? " open" : "")}>
+        <button className="drawer-close" onClick={closeSidebar} aria-label="Close menu">
+          <CloseIcon />
+        </button>
+
+        <div className="drawer-header">
+          <div className="drawer-avatar">{initials || "?"}</div>
+          <div>
+            <div className="drawer-name">{account.firstName} {account.lastName}</div>
+            <div className="drawer-username">@{username}</div>
+          </div>
+        </div>
+
+        {sidebarView === "menu" ? (
+          <React.Fragment>
+            <div className="sidebar-stats">
+              <div className="stat-card">
+                <span className="stat-icon"><ListIcon /></span>
+                <span className="stat-value">{todayCount}</span>
+                <span className="stat-label">Today tasks</span>
+              </div>
+              <div className="stat-card">
+                <span className="stat-icon"><CalendarIcon /></span>
+                <span className="stat-value">{upcomingCount}</span>
+                <span className="stat-label">Upcoming task</span>
+              </div>
+            </div>
+
+            <div className="drawer-section">
+              <button className="drawer-row-btn" onClick={() => setSidebarView("settings")}>
+                <GearIcon />
+                Settings
+              </button>
+              <button className="drawer-row-btn danger" onClick={onLogout}>
+                <LogoutIcon />
+                Log out
+              </button>
+            </div>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <button className="drawer-back" onClick={() => setSidebarView("menu")}>
+              <BackIcon /> Back
+            </button>
+
+            <div className="drawer-section">
+              <h4>Profile</h4>
+              <div className="drawer-info-row">
+                <span>First name</span>
+                <span>{account.firstName || "—"}</span>
+              </div>
+              <div className="drawer-info-row">
+                <span>Last name</span>
+                <span>{account.lastName || "—"}</span>
+              </div>
+            </div>
+
+            <div className="drawer-section">
+              <h4>Username</h4>
+              <form onSubmit={changeUsername} className="drawer-form">
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={editUsername}
+                  onChange={e => { setEditUsername(e.target.value); setUsernameError(""); setUsernameSuccess(""); }}
+                  autoComplete="username"
+                  maxLength={24}
+                />
+                {usernameError && <div className="drawer-error">{usernameError}</div>}
+                {usernameSuccess && <div className="drawer-success">{usernameSuccess}</div>}
+                <button type="submit" className="drawer-submit">Update username</button>
+              </form>
+            </div>
+
+            <div className="drawer-section">
+              <h4>Email</h4>
+              <form onSubmit={changeEmail} className="drawer-form">
+                <input
+                  type="email"
+                  placeholder="you@gmail.com"
+                  value={editEmail}
+                  onChange={e => { setEditEmail(e.target.value); setEmailError(""); setEmailSuccess(""); }}
+                  autoComplete="email"
+                  maxLength={80}
+                />
+                {emailError && <div className="drawer-error">{emailError}</div>}
+                {emailSuccess && <div className="drawer-success">{emailSuccess}</div>}
+                <button type="submit" className="drawer-submit">Update email</button>
+              </form>
+            </div>
+
+            <div className="drawer-section">
+              <h4>Change password</h4>
+              <form onSubmit={changePassword} className="drawer-form">
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmNewPassword}
+                  onChange={e => setConfirmNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                {pwError && <div className="drawer-error">{pwError}</div>}
+                {pwSuccess && <div className="drawer-success">{pwSuccess}</div>}
+                <button type="submit" className="drawer-submit">Update password</button>
+              </form>
+            </div>
+
+            <div className="drawer-section">
+              <h4>Preferences</h4>
+              <button className="drawer-row-btn" onClick={onToggleTheme}>
+                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+                Switch to {theme === "dark" ? "light" : "dark"} mode
+              </button>
+              <button className="drawer-row-btn danger" onClick={onLogout}>
+                <LogoutIcon />
+                Log out
+              </button>
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+
+      <div className="main-content">
       <div className="masthead">
         <div className="masthead-left">
-          <button className="theme-toggle" onClick={openSidebar} aria-label="Open menu">
+          <button className="theme-toggle sidebar-toggle" onClick={openSidebar} aria-label="Open menu">
             <MenuIcon />
           </button>
           <div className="masthead-brand">
@@ -724,82 +1034,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout }){
           </div>
         </div>
       )}
-
-      {showSidebar && (
-        <div className="drawer-overlay" onClick={closeSidebar}>
-          <div className="drawer-panel" onClick={e => e.stopPropagation()}>
-            <button className="drawer-close" onClick={closeSidebar} aria-label="Close menu">
-              <CloseIcon />
-            </button>
-
-            <div className="drawer-header">
-              <div className="drawer-avatar">{initials || "?"}</div>
-              <div>
-                <div className="drawer-name">{account.firstName} {account.lastName}</div>
-                <div className="drawer-username">@{username}</div>
-              </div>
-            </div>
-
-            <div className="drawer-section">
-              <h4>Profile</h4>
-              <div className="drawer-info-row">
-                <span>First name</span>
-                <span>{account.firstName || "—"}</span>
-              </div>
-              <div className="drawer-info-row">
-                <span>Last name</span>
-                <span>{account.lastName || "—"}</span>
-              </div>
-              <div className="drawer-info-row">
-                <span>Email</span>
-                <span>{account.email || "—"}</span>
-              </div>
-            </div>
-
-            <div className="drawer-section">
-              <h4>Change password</h4>
-              <form onSubmit={changePassword} className="drawer-form">
-                <input
-                  type="password"
-                  placeholder="Current password"
-                  value={currentPassword}
-                  onChange={e => setCurrentPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-                <input
-                  type="password"
-                  placeholder="New password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={confirmNewPassword}
-                  onChange={e => setConfirmNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-                {pwError && <div className="drawer-error">{pwError}</div>}
-                {pwSuccess && <div className="drawer-success">{pwSuccess}</div>}
-                <button type="submit" className="drawer-submit">Update password</button>
-              </form>
-            </div>
-
-            <div className="drawer-section">
-              <h4>Settings</h4>
-              <button className="drawer-row-btn" onClick={onToggleTheme}>
-                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-                Switch to {theme === "dark" ? "light" : "dark"} mode
-              </button>
-              <button className="drawer-row-btn danger" onClick={onLogout}>
-                <LogoutIcon />
-                Log out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -823,11 +1058,14 @@ function Root(){
   const handleLogout = () => {
     setSession(null);
   };
+  const handleUsernameChange = (newUsername) => {
+    setSession(newUsername);
+  };
 
   return (
     <div key={session ? "app" : "auth"} className="screen-transition">
       {session ? (
-        <TodoScreen username={session} theme={theme} onToggleTheme={toggleTheme} onLogout={handleLogout} />
+        <TodoScreen username={session} theme={theme} onToggleTheme={toggleTheme} onLogout={handleLogout} onUsernameChange={handleUsernameChange} />
       ) : (
         <AuthScreen onLogin={handleLogin} theme={theme} onToggleTheme={toggleTheme} />
       )}
