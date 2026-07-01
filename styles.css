@@ -197,6 +197,16 @@ body{
   opacity: 0.55;
 }
 
+/* ---- view title ---- */
+.view-title{
+  font-family:'Fraunces', serif;
+  font-size: 17px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--text-hi);
+  margin: 0 0 14px;
+}
+
 /* ---- composer ---- */
 .composer{
   display:flex;
@@ -1049,44 +1059,59 @@ body.light .modal-field input[type="time"]{ color-scheme: light; }
   margin-top: 2px;
 }
 
-.sidebar-stats{
+.sidebar-nav{
   display:flex;
-  gap: 10px;
-  padding-top: 20px;
-  margin-top: 20px;
-  border-top: 1px dashed var(--rule);
+  flex-direction: column;
+  gap: 3px;
 }
-.stat-card{
-  flex:1;
+.nav-item{
   display:flex;
-  flex-direction:column;
-  align-items:flex-start;
-  gap: 6px;
-  background: var(--paper-2);
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  padding: 12px 12px 11px;
-}
-.stat-icon{
-  width: 24px; height: 24px;
-  border-radius: 7px;
-  display:flex; align-items:center; justify-content:center;
-  background: linear-gradient(135deg, var(--logo-a), var(--logo-b));
-  color: var(--paper);
-}
-.stat-icon svg{ width:13px; height:13px; }
-.stat-value{
+  align-items:center;
+  gap: 11px;
+  width: 100%;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 9px 10px;
+  color: var(--text-mid);
   font-family:'Inter', sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-hi);
-  line-height:1;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor:pointer;
+  opacity: 0;
+  transform: translateY(-6px);
+  animation: navItemIn 0.32s cubic-bezier(.2,.8,.2,1) both;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.stat-label{
+.nav-item:hover{ background: var(--paper-2); color: var(--accent); }
+.nav-item.active{
+  background: var(--paper-2);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.nav-icon{ display:flex; flex-shrink:0; }
+.nav-item svg{ width:16px; height:16px; }
+.nav-label{ flex:1; }
+.nav-count{
   font-family:'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  font-size: 10.5px;
+  color: var(--text-lo);
+  background: var(--paper-2);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.nav-item.active .nav-count{ color: var(--accent); }
+
+@keyframes navItemIn{
+  from{ opacity: 0; transform: translateY(-6px); }
+  to{ opacity: 1; transform: translateY(0); }
+}
+
+.drawer-placeholder{
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text-lo);
 }
 

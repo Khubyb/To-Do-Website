@@ -88,6 +88,12 @@ function dueInfo(dueDate, done){
   return { label, state };
 }
 
+function todayDateStr(){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+
 function formatTime(timeStr){
   if(!timeStr) return "";
   const [h, m] = timeStr.split(":").map(Number);
@@ -205,6 +211,38 @@ function CalendarIcon(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3.5" y="5" width="17" height="15.5" rx="2.2" />
       <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+function CheckSquareIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3.2" />
+      <polyline points="8,12.5 11,15.5 16.5,9.5" />
+    </svg>
+  );
+}
+function LayersIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3.5l8.5 4.5L12 12.5 3.5 8z" />
+      <path d="M3.5 12.5L12 17l8.5-4.5" />
+      <path d="M3.5 16.5L12 21l8.5-4.5" />
+    </svg>
+  );
+}
+function FolderIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3.5 6.7a1.5 1.5 0 0 1 1.5-1.5h4.1l2 2.1H19a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+    </svg>
+  );
+}
+function TagIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12.6 3.5H6.2a1 1 0 0 0-1 1v6.4a1 1 0 0 0 .3.7l9 9a1 1 0 0 0 1.4 0l6.4-6.4a1 1 0 0 0 0-1.4l-9-9a1 1 0 0 0-.7-.3z" />
+      <circle cx="9" cy="9" r="1.3" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -547,6 +585,8 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
 
   const [showSidebar, setShowSidebar] = useState(false);
   const [sidebarView, setSidebarView] = useState("menu");
+  const [sidebarOpenCount, setSidebarOpenCount] = useState(0);
+  const [navView, setNavView] = useState("all");
   const [toasts, setToasts] = useState([]);
   const toastTimers = useRef({});
 
@@ -596,7 +636,19 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const initials = ((account.firstName ? account.firstName[0] : username[0]) +
     (account.lastName ? account.lastName[0] : "")).toUpperCase();
 
-  const openSidebar = () => setShowSidebar(true);
+  const openSidebar = () => {
+    setShowSidebar(true);
+    setSidebarOpenCount(c => c + 1);
+  };
+
+  const handleNavClick = (key) => {
+    if(key === "settings" || key === "projects" || key === "labels"){
+      setSidebarView(key);
+      return;
+    }
+    setNavView(key);
+    closeSidebar();
+  };
   const closeSidebar = () => {
     setShowSidebar(false);
     setSidebarView("menu");
@@ -743,7 +795,12 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   };
 
   const visible = useMemo(() => {
-    let list = filter === "completed" ? tasks.filter(t => t.done) : tasks.filter(t => !t.done);
+    const todayStr = todayDateStr();
+    let base = tasks;
+    if(navView === "today") base = tasks.filter(t => t.dueDate === todayStr);
+    else if(navView === "upcoming") base = tasks.filter(t => t.dueDate && t.dueDate > todayStr);
+
+    let list = filter === "completed" ? base.filter(t => t.done) : base.filter(t => !t.done);
 
     return [...list].sort((a, b) => {
       if(a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
@@ -751,16 +808,14 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       if(!a.dueDate && b.dueDate) return 1;
       return 0;
     });
-  }, [tasks, filter]);
+  }, [tasks, filter, navView]);
+
+  const navTitle = navView === "today" ? "Today" : navView === "upcoming" ? "Upcoming" : "All Tasks";
 
   const remaining = tasks.filter(t => !t.done).length;
 
   const { todayCount, upcomingCount } = useMemo(() => {
-    const todayStr = (() => {
-      const d = new Date();
-      d.setHours(0,0,0,0);
-      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-    })();
+    const todayStr = todayDateStr();
     let today = 0, upcoming = 0;
     tasks.forEach(t => {
       if(t.done || !t.dueDate) return;
@@ -798,28 +853,51 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
 
         {sidebarView === "menu" ? (
           <React.Fragment>
-            <div className="sidebar-stats">
-              <div className="stat-card">
-                <span className="stat-icon"><ListIcon /></span>
-                <span className="stat-value">{todayCount}</span>
-                <span className="stat-label">Today tasks</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-icon"><CalendarIcon /></span>
-                <span className="stat-value">{upcomingCount}</span>
-                <span className="stat-label">Upcoming task</span>
-              </div>
-            </div>
+            <nav className="sidebar-nav" key={sidebarOpenCount}>
+              {[
+                { key: "today", label: "Today", icon: <CheckSquareIcon />, count: todayCount },
+                { key: "upcoming", label: "Upcoming", icon: <CalendarIcon />, count: upcomingCount },
+                { key: "all", label: "All Tasks", icon: <LayersIcon />, count: tasks.length },
+                { key: "projects", label: "Projects", icon: <FolderIcon /> },
+                { key: "labels", label: "Labels", icon: <TagIcon /> },
+                { key: "settings", label: "Settings", icon: <GearIcon /> },
+              ].map((item, i) => (
+                <button
+                  key={item.key}
+                  className={"nav-item" + (navView === item.key ? " active" : "")}
+                  style={{ animationDelay: (i * 0.05) + "s" }}
+                  onClick={() => handleNavClick(item.key)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                  {item.count != null && <span className="nav-count">{item.count}</span>}
+                </button>
+              ))}
+            </nav>
 
             <div className="drawer-section">
-              <button className="drawer-row-btn" onClick={() => setSidebarView("settings")}>
-                <GearIcon />
-                Settings
+              <button className="drawer-row-btn" onClick={onToggleTheme}>
+                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+                Switch to {theme === "dark" ? "light" : "dark"} mode
               </button>
               <button className="drawer-row-btn danger" onClick={onLogout}>
                 <LogoutIcon />
                 Log out
               </button>
+            </div>
+          </React.Fragment>
+        ) : sidebarView === "projects" || sidebarView === "labels" ? (
+          <React.Fragment>
+            <button className="drawer-back" onClick={() => setSidebarView("menu")}>
+              <BackIcon /> Back
+            </button>
+            <div className="drawer-section">
+              <h4>{sidebarView === "projects" ? "Projects" : "Labels"}</h4>
+              <p className="drawer-placeholder">
+                {sidebarView === "projects"
+                  ? "Grouping tasks into projects is on the way — for now, all your tasks live under All Tasks."
+                  : "Custom labels are on the way — for now, tasks can be prioritized as low, medium, or high."}
+              </p>
             </div>
           </React.Fragment>
         ) : (
@@ -904,17 +982,6 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               </form>
             </div>
 
-            <div className="drawer-section">
-              <h4>Preferences</h4>
-              <button className="drawer-row-btn" onClick={onToggleTheme}>
-                {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-                Switch to {theme === "dark" ? "light" : "dark"} mode
-              </button>
-              <button className="drawer-row-btn danger" onClick={onLogout}>
-                <LogoutIcon />
-                Log out
-              </button>
-            </div>
           </React.Fragment>
         )}
       </div>
@@ -945,6 +1012,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
           {Array.from({length:14}).map((_,i) => <i key={i}></i>)}
         </div>
         <div className="sheet">
+          <div className="view-title">{navTitle}</div>
           <div className="composer">
             <input
               type="text"
@@ -968,9 +1036,15 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
           {visible.length === 0 ? (
             <div className="empty">
               <div className="quill">
-                {tasks.length === 0 ? "A blank page." : "Nothing here for this view."}
+                {tasks.length === 0
+                  ? "A blank page."
+                  : navView === "today"
+                    ? "Nothing due today."
+                    : navView === "upcoming"
+                      ? "Nothing coming up."
+                      : "Nothing here for this view."}
               </div>
-              <small>{tasks.length === 0 ? "Add your first task above." : "Try a different filter."}</small>
+              <small>{tasks.length === 0 ? "Add your first task above." : "Try a different filter or nav item."}</small>
             </div>
           ) : (
             <ul className="list">
