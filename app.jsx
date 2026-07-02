@@ -39,6 +39,23 @@ function saveTasks(username, tasks){
   try{ localStorage.setItem(tasksKey(username), JSON.stringify(tasks)); }catch(e){}
 }
 
+function projectsKey(username){ return "field-notes-project-" + username; }
+function loadProject(username){
+  try{
+    const raw = localStorage.getItem(projectsKey(username));
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function saveProject(username, project){
+  try{
+    if(project){
+      localStorage.setItem(projectsKey(username), JSON.stringify(project));
+    }else{
+      localStorage.removeItem(projectsKey(username));
+    }
+  }catch(e){}
+}
+
 function renameUserKey(oldName, newName){
   const users = loadUsers();
   if(!(oldName in users)) return false;
@@ -117,6 +134,14 @@ function TrashIcon(){
       <path d="M4 6h16" />
       <path d="M9 6V4h6v2" />
       <path d="M6 6l1 14h10l1-14" />
+    </svg>
+  );
+}
+function EditIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21h5l11-11a2 2 0 0 0-5-5L3 16v5z" />
+      <path d="M14 6l4 4" />
     </svg>
   );
 }
@@ -243,6 +268,24 @@ function TagIcon(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.6 3.5H6.2a1 1 0 0 0-1 1v6.4a1 1 0 0 0 .3.7l9 9a1 1 0 0 0 1.4 0l6.4-6.4a1 1 0 0 0 0-1.4l-9-9a1 1 0 0 0-.7-.3z" />
       <circle cx="9" cy="9" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function DoneIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <polyline points="8,12.3 11,15.3 16,9.3" />
+    </svg>
+  );
+}
+function HandIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 13.2V6.3a1.4 1.4 0 0 1 2.8 0V12" />
+      <path d="M10.8 12V4.8a1.4 1.4 0 0 1 2.8 0V12" />
+      <path d="M13.6 12V6a1.4 1.4 0 0 1 2.8 0v7.2" />
+      <path d="M16.4 10.6a1.4 1.4 0 0 1 2.8 0v4.4c0 3.5-2.3 5.9-5.9 5.9h-.9c-2.1 0-3.3-.6-4.5-2L5.2 15c-.6-.8-.4-1.7.3-2.2.7-.5 1.6-.4 2.2.3l1.3 1.5" />
     </svg>
   );
 }
@@ -532,7 +575,7 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
 
 /* ---------------- task row ---------------- */
 
-function Task({ task, onToggle, onDelete }){
+function Task({ task, index, onToggle, onDelete, onEdit }){
   const [leaving, setLeaving] = useState(false);
   const [checked, setChecked] = useState(task.done);
   const due = dueInfo(task.dueDate, task.done);
@@ -550,6 +593,7 @@ function Task({ task, onToggle, onDelete }){
 
   return (
     <li className={"task p-" + task.priority + (leaving ? " leaving" : "")}>
+      {index != null && <span className="task-number">{index}</span>}
       <button
         className={"check" + (checked ? " done" : "")}
         onClick={handleToggle}
@@ -558,16 +602,24 @@ function Task({ task, onToggle, onDelete }){
         {checked && <CheckIcon />}
       </button>
       <div className="task-body">
-        <div className={"task-text" + (checked ? " done" : "")}>{task.text}</div>
+        <div className={"task-text" + (checked ? " done" : "")}>
+          {task.label && <span className="task-label-flag" aria-label="Labeled task"><HandIcon /></span>}
+          {task.text}
+        </div>
         <div className="task-meta">
           <span className="task-time">added {timeAgo(task.created)}</span>
           {due && <span className={"due " + due.state}>{due.label}</span>}
           {task.dueTime && <span className="due-time">{formatTime(task.dueTime)}</span>}
         </div>
       </div>
-      <button className="del-btn" onClick={handleDelete} aria-label="Delete task">
-        <TrashIcon />
-      </button>
+      <div className="task-actions">
+        <button className="edit-btn" onClick={() => onEdit(task)} aria-label="Edit task">
+          <EditIcon />
+        </button>
+        <button className="del-btn" onClick={handleDelete} aria-label="Delete task">
+          <TrashIcon />
+        </button>
+      </div>
     </li>
   );
 }
@@ -576,12 +628,19 @@ function Task({ task, onToggle, onDelete }){
 
 function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange }){
   const [tasks, setTasks] = useState(() => loadTasks(username));
-  const [filter, setFilter] = useState("active");
   const [showAdd, setShowAdd] = useState(false);
   const [modalText, setModalText] = useState("");
   const [modalDate, setModalDate] = useState("");
   const [modalTime, setModalTime] = useState("");
+  const [modalIsLabel, setModalIsLabel] = useState(false);
   const modalTextRef = useRef(null);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskText, setEditTaskText] = useState("");
+  const [editTaskTime, setEditTaskTime] = useState("");
+
+  const [showLabelPopup, setShowLabelPopup] = useState(false);
+  const labelPopupTasks = useMemo(() => tasks.filter(t => t.label && !t.done), [tasks]);
 
   const [showSidebar, setShowSidebar] = useState(false);
   const [sidebarView, setSidebarView] = useState("menu");
@@ -589,6 +648,20 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const [navView, setNavView] = useState("all");
   const [toasts, setToasts] = useState([]);
   const toastTimers = useRef({});
+
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [savedProject, setSavedProject] = useState(() => loadProject(username));
+  const [projectScreen, setProjectScreen] = useState(() => {
+    const proj = loadProject(username);
+    return proj ? "choose" : "create"; // choose | create | view
+  });
+
+  const [projectMemberCount, setProjectMemberCount] = useState(2);
+  const [projectLeaderIndex, setProjectLeaderIndex] = useState(0);
+  const [projectError, setProjectError] = useState("");
+  const [projectMembers, setProjectMembers] = useState(() =>
+    Array.from({ length: 2 }, () => ({ name: "", task: "" }))
+  );
 
   const pushToast = (message, kind = "added") => {
     const id = Date.now() + Math.random();
@@ -612,13 +685,18 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
 
-  const [editUsername, setEditUsername] = useState(username);
+  const [editUsername, setEditUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [usernameSuccess, setUsernameSuccess] = useState("");
 
   const [editEmail, setEditEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [emailSuccess, setEmailSuccess] = useState("");
+
+  const [showUsernameFields, setShowUsernameFields] = useState(false);
+  const [showEmailFields, setShowEmailFields] = useState(false);
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
+
 
   const account = useMemo(() => {
     const users = loadUsers();
@@ -628,7 +706,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   }, [username, accountVersion]);
 
   useEffect(() => {
-    setEditUsername(username);
+    setEditUsername("");
     setEditEmail(account.email || "");
   }, [username, accountVersion]);
 
@@ -641,8 +719,39 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setSidebarOpenCount(c => c + 1);
   };
 
+  const resetProjectForm = (count = 2) => {
+    setProjectError("");
+    setProjectMemberCount(count);
+    setProjectLeaderIndex(0);
+    setProjectMembers(Array.from({ length: count }, () => ({ name: "", task: "" })));
+  };
+
+  const openProjectsModal = () => {
+    const proj = loadProject(username);
+    setSavedProject(proj);
+    setProjectError("");
+    setProjectScreen(proj ? "choose" : "create");
+    if(!proj) resetProjectForm(2);
+    setShowProjectModal(true);
+  };
+
+  useEffect(() => {
+    // Refresh saved project + reset the form when switching users.
+    const proj = loadProject(username);
+    setSavedProject(proj);
+    setProjectError("");
+    setProjectScreen(proj ? "choose" : "create");
+    setShowProjectModal(false);
+    resetProjectForm(2);
+  }, [username]);
+
   const handleNavClick = (key) => {
-    if(key === "settings" || key === "projects" || key === "labels"){
+    if(key === "projects"){
+      closeSidebar();
+      openProjectsModal();
+      return;
+    }
+    if(key === "settings" || key === "labels"){
       setSidebarView(key);
       return;
     }
@@ -661,6 +770,78 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setUsernameSuccess("");
     setEmailError("");
     setEmailSuccess("");
+    setShowUsernameFields(false);
+    setShowEmailFields(false);
+    setShowPasswordFields(false);
+  };
+
+  const closeProjectModal = () => {
+    setShowProjectModal(false);
+  };
+
+  const showCreateProject = () => {
+    setProjectError("");
+    setProjectScreen("create");
+    resetProjectForm(2);
+  };
+
+  const showPreviousProject = () => {
+    setProjectError("");
+    setProjectScreen("view");
+  };
+
+  const confirmProject = () => {
+    const count = Math.max(2, Math.min(10, projectMemberCount || 2));
+    const leaderIndex = Math.max(0, Math.min(count - 1, projectLeaderIndex));
+
+    const members = Array.from({ length: count }).map((_, i) => {
+      const m = projectMembers[i] || { name: "", task: "" };
+      return { name: (m.name || "").trim(), task: (m.task || "").trim() };
+    });
+
+    const missing = members.findIndex(m => !m.name || !m.task);
+    if(missing !== -1){
+      const n = missing + 1;
+      setProjectError(`Please write both name and task for Member ${n}.`);
+      return;
+    }
+
+    const projectData = {
+      memberCount: count,
+      leaderIndex,
+      members,
+      updatedAt: Date.now(),
+    };
+
+    saveProject(username, projectData);
+    setSavedProject(projectData);
+    setProjectScreen("view");
+    setProjectError("");
+    pushToast("Project saved", "added");
+  };
+
+  const handleProjectCountChange = (value) => {
+    let n = parseInt(value, 10);
+    if(isNaN(n)) n = 2;
+    if(n < 2) n = 2;
+    if(n > 10) n = 10;
+    setProjectError("");
+    setProjectMemberCount(n);
+    setProjectMembers(prev => {
+      const next = [...prev];
+      while(next.length < n) next.push({ name: "", task: "" });
+      return next.slice(0, n);
+    });
+    setProjectLeaderIndex(i => (i >= n ? 0 : i));
+  };
+
+  const updateProjectMember = (index, field, value) => {
+    setProjectMembers(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+    setProjectError("");
   };
 
   const changePassword = (e) => {
@@ -727,19 +908,44 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     e.preventDefault();
     setEmailError("");
     setEmailSuccess("");
-    const mail = editEmail.trim();
+    const next = editEmail.trim();
 
-    if(!GMAIL_RE.test(mail)){
-      setEmailError("Email must be a valid address ending in @gmail.com.");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)){
+      setEmailError("Please enter a valid email address.");
       return;
     }
     const users = loadUsers();
     const acc = users[username];
     const base = acc && typeof acc === "object" ? acc : {};
-    users[username] = { ...base, email: mail };
+    users[username] = { ...base, email: next };
     saveUsers(users);
     setAccountVersion(v => v + 1);
     setEmailSuccess("Email updated.");
+  };
+
+  const openEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditTaskText(task.text || "");
+    setEditTaskTime(task.dueTime || "");
+    setShowEditTaskModal(true);
+  };
+
+  const closeEditTask = () => {
+    setShowEditTaskModal(false);
+    setEditingTaskId(null);
+    setEditTaskText("");
+    setEditTaskTime("");
+  };
+
+  const saveTaskEdit = () => {
+    const nextText = editTaskText.trim();
+    if(!editingTaskId || !nextText) return;
+    setTasks(prev => prev.map(t => {
+      if(t.id !== editingTaskId) return t;
+      return { ...t, text: nextText, dueTime: editTaskTime || null };
+    }));
+    pushToast("Task updated", "added");
+    closeEditTask();
   };
 
   useEffect(() => { saveTasks(username, tasks); }, [tasks, username]);
@@ -750,12 +956,22 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     }
   }, [showAdd]);
 
+  // every time the app is opened, resurface any labeled tasks as a reminder popup
+  useEffect(() => {
+    const initial = loadTasks(username).filter(t => t.label && !t.done);
+    if(initial.length > 0){
+      const timer = setTimeout(() => setShowLabelPopup(true), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [username]);
+
   const openAdd = () => setShowAdd(true);
   const closeAdd = () => {
     setShowAdd(false);
     setModalText("");
     setModalDate("");
     setModalTime("");
+    setModalIsLabel(false);
   };
 
   const submitTask = () => {
@@ -770,9 +986,10 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       dueTime: modalTime || null,
       priority: "medium",
       category: null,
+      label: modalIsLabel,
     };
     setTasks(prev => [newTask, ...prev]);
-    pushToast("Task added", "added");
+    pushToast(modalIsLabel ? "Task added to labels" : "Task added", "added");
     closeAdd();
   };
 
@@ -800,7 +1017,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     if(navView === "today") base = tasks.filter(t => t.dueDate === todayStr);
     else if(navView === "upcoming") base = tasks.filter(t => t.dueDate && t.dueDate > todayStr);
 
-    let list = filter === "completed" ? base.filter(t => t.done) : base.filter(t => !t.done);
+    let list = navView === "completed" ? base.filter(t => t.done) : base.filter(t => !t.done);
 
     return [...list].sort((a, b) => {
       if(a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
@@ -808,21 +1025,25 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       if(!a.dueDate && b.dueDate) return 1;
       return 0;
     });
-  }, [tasks, filter, navView]);
+  }, [tasks, navView]);
 
-  const navTitle = navView === "today" ? "Today" : navView === "upcoming" ? "Upcoming" : "All Tasks";
+  const navTitle = navView === "today" ? "Today"
+    : navView === "upcoming" ? "Upcoming"
+    : navView === "completed" ? "Completed"
+    : "All Tasks";
 
   const remaining = tasks.filter(t => !t.done).length;
 
-  const { todayCount, upcomingCount } = useMemo(() => {
+  const { todayCount, upcomingCount, completedCount } = useMemo(() => {
     const todayStr = todayDateStr();
-    let today = 0, upcoming = 0;
+    let today = 0, upcoming = 0, completed = 0;
     tasks.forEach(t => {
-      if(t.done || !t.dueDate) return;
+      if(t.done){ completed++; return; }
+      if(!t.dueDate) return;
       if(t.dueDate === todayStr) today++;
       else if(t.dueDate > todayStr) upcoming++;
     });
-    return { todayCount: today, upcomingCount: upcoming };
+    return { todayCount: today, upcomingCount: upcoming, completedCount: completed };
   }, [tasks]);
 
   return (
@@ -857,6 +1078,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               {[
                 { key: "today", label: "Today", icon: <CheckSquareIcon />, count: todayCount },
                 { key: "upcoming", label: "Upcoming", icon: <CalendarIcon />, count: upcomingCount },
+                { key: "completed", label: "Completed", icon: <DoneIcon />, count: completedCount },
                 { key: "all", label: "All Tasks", icon: <LayersIcon />, count: tasks.length },
                 { key: "projects", label: "Projects", icon: <FolderIcon /> },
                 { key: "labels", label: "Labels", icon: <TagIcon /> },
@@ -886,18 +1108,46 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               </button>
             </div>
           </React.Fragment>
-        ) : sidebarView === "projects" || sidebarView === "labels" ? (
+        ) : sidebarView === "projects" ? (
           <React.Fragment>
             <button className="drawer-back" onClick={() => setSidebarView("menu")}>
               <BackIcon /> Back
             </button>
             <div className="drawer-section">
-              <h4>{sidebarView === "projects" ? "Projects" : "Labels"}</h4>
+              <h4>Projects</h4>
               <p className="drawer-placeholder">
-                {sidebarView === "projects"
-                  ? "Grouping tasks into projects is on the way — for now, all your tasks live under All Tasks."
-                  : "Custom labels are on the way — for now, tasks can be prioritized as low, medium, or high."}
+                Grouping tasks into projects is on the way — for now, all your tasks live under All Tasks.
               </p>
+            </div>
+          </React.Fragment>
+        ) : sidebarView === "labels" ? (
+          <React.Fragment>
+            <button className="drawer-back" onClick={() => setSidebarView("menu")}>
+              <BackIcon /> Back
+            </button>
+            <div className="drawer-section">
+              <h4>Labels</h4>
+              {labelPopupTasks.length === 0 ? (
+                <p className="drawer-placeholder">
+                  No labeled tasks yet. Tap the hand icon while adding a task to pin it here as a reminder.
+                </p>
+              ) : (
+                <ul className="labels-list">
+                  {labelPopupTasks.map(t => (
+                    <li key={t.id} className="label-item">
+                      <span className="label-item-icon"><HandIcon /></span>
+                      <span className="label-item-text">{t.text}</span>
+                      <button
+                        className="label-item-check"
+                        onClick={() => toggleTask(t.id)}
+                        aria-label="Mark as done"
+                      >
+                        <CheckIcon />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </React.Fragment>
         ) : (
@@ -907,79 +1157,90 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
             </button>
 
             <div className="drawer-section">
-              <h4>Profile</h4>
-              <div className="drawer-info-row">
-                <span>First name</span>
-                <span>{account.firstName || "—"}</span>
-              </div>
-              <div className="drawer-info-row">
-                <span>Last name</span>
-                <span>{account.lastName || "—"}</span>
-              </div>
-            </div>
-
-            <div className="drawer-section">
               <h4>Username</h4>
-              <form onSubmit={changeUsername} className="drawer-form">
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={editUsername}
-                  onChange={e => { setEditUsername(e.target.value); setUsernameError(""); setUsernameSuccess(""); }}
-                  autoComplete="username"
-                  maxLength={24}
-                />
-                {usernameError && <div className="drawer-error">{usernameError}</div>}
-                {usernameSuccess && <div className="drawer-success">{usernameSuccess}</div>}
-                <button type="submit" className="drawer-submit">Update username</button>
-              </form>
+              {!showUsernameFields ? (
+                <button className="drawer-row-btn accent" onClick={() => setShowUsernameFields(true)}>
+                  <UserIcon />
+                  Update username
+                </button>
+              ) : (
+                <form onSubmit={changeUsername} className="drawer-form">
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={editUsername || username}
+                    onChange={e => { setEditUsername(e.target.value); setUsernameError(""); setUsernameSuccess(""); }}
+                    autoComplete="username"
+                    maxLength={24}
+                    autoFocus
+                  />
+                  {usernameError && <div className="drawer-error">{usernameError}</div>}
+                  {usernameSuccess && <div className="drawer-success">{usernameSuccess}</div>}
+                  <button type="submit" className="drawer-submit">Confirm</button>
+                </form>
+              )}
             </div>
 
             <div className="drawer-section">
               <h4>Email</h4>
-              <form onSubmit={changeEmail} className="drawer-form">
-                <input
-                  type="email"
-                  placeholder="you@gmail.com"
-                  value={editEmail}
-                  onChange={e => { setEditEmail(e.target.value); setEmailError(""); setEmailSuccess(""); }}
-                  autoComplete="email"
-                  maxLength={80}
-                />
-                {emailError && <div className="drawer-error">{emailError}</div>}
-                {emailSuccess && <div className="drawer-success">{emailSuccess}</div>}
-                <button type="submit" className="drawer-submit">Update email</button>
-              </form>
+              {!showEmailFields ? (
+                <button className="drawer-row-btn accent" onClick={() => setShowEmailFields(true)}>
+                  <MailIcon />
+                  Update email
+                </button>
+              ) : (
+                <form onSubmit={changeEmail} className="drawer-form">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={editEmail}
+                    onChange={e => { setEditEmail(e.target.value); setEmailError(""); setEmailSuccess(""); }}
+                    autoComplete="email"
+                    autoFocus
+                  />
+                  {emailError && <div className="drawer-error">{emailError}</div>}
+                  {emailSuccess && <div className="drawer-success">{emailSuccess}</div>}
+                  <button type="submit" className="drawer-submit">Confirm</button>
+                </form>
+              )}
             </div>
 
             <div className="drawer-section">
               <h4>Change password</h4>
-              <form onSubmit={changePassword} className="drawer-form">
-                <input
-                  type="password"
-                  placeholder="Current password"
-                  value={currentPassword}
-                  onChange={e => setCurrentPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-                <input
-                  type="password"
-                  placeholder="New password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={confirmNewPassword}
-                  onChange={e => setConfirmNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-                {pwError && <div className="drawer-error">{pwError}</div>}
-                {pwSuccess && <div className="drawer-success">{pwSuccess}</div>}
-                <button type="submit" className="drawer-submit">Update password</button>
-              </form>
+              {!showPasswordFields ? (
+                <button className="drawer-row-btn accent" onClick={() => setShowPasswordFields(true)}>
+                  <LockIcon />
+                  Update password
+                </button>
+              ) : (
+                <form onSubmit={changePassword} className="drawer-form">
+                  <input
+                    type="password"
+                    placeholder="Current password"
+                    value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)}
+                    autoComplete="current-password"
+                    autoFocus
+                  />
+                  <input
+                    type="password"
+                    placeholder="New password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmNewPassword}
+                    onChange={e => setConfirmNewPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  {pwError && <div className="drawer-error">{pwError}</div>}
+                  {pwSuccess && <div className="drawer-success">{pwSuccess}</div>}
+                  <button type="submit" className="drawer-submit">Confirm</button>
+                </form>
+              )}
             </div>
 
           </React.Fragment>
@@ -1026,11 +1287,11 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
           </div>
 
           <div className="toolbar">
-            <div className="filters">
-              <button className={filter==="active" ? "active":""} onClick={() => setFilter("active")}>Active</button>
-              <button className={filter==="completed" ? "active":""} onClick={() => setFilter("completed")}>Completed</button>
+            <div className="count">
+              {navView === "completed"
+                ? <React.Fragment><b>{visible.length}</b> completed</React.Fragment>
+                : <React.Fragment><b>{remaining}</b> remaining</React.Fragment>}
             </div>
-            <div className="count"><b>{remaining}</b> remaining</div>
           </div>
 
           {visible.length === 0 ? (
@@ -1048,8 +1309,8 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
             </div>
           ) : (
             <ul className="list">
-              {visible.map(t => (
-                <Task key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} />
+              {visible.map((t, i) => (
+                <Task key={t.id} task={t} index={i + 1} onToggle={toggleTask} onDelete={deleteTask} onEdit={openEditTask} />
               ))}
             </ul>
           )}
@@ -1102,9 +1363,208 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
             </label>
 
             <div className="modal-actions">
+              <button
+                type="button"
+                className={"hand-btn" + (modalIsLabel ? " active" : "")}
+                onClick={() => setModalIsLabel(v => !v)}
+                aria-pressed={modalIsLabel}
+                aria-label="Mark as label"
+                title="Pin as a label — it'll pop up every time you open the app"
+              >
+                <HandIcon />
+              </button>
               <button type="button" className="modal-cancel" onClick={closeAdd}>Cancel</button>
               <button type="button" className="modal-submit" onClick={submitTask} disabled={!modalText.trim()}>Add task</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showEditTaskModal && (
+        <div className="modal-overlay" onClick={closeEditTask}>
+          <div
+            className="modal-card"
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => { if(e.key === "Escape") closeEditTask(); if(e.key === "Enter" && editTaskText.trim()) saveTaskEdit(); }}
+          >
+            <h3>Edit task</h3>
+            <label className="modal-field">
+              <span>Task text</span>
+              <input
+                type="text"
+                placeholder="Task text"
+                value={editTaskText}
+                onChange={e => setEditTaskText(e.target.value)}
+                maxLength={200}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Time</span>
+              <input
+                type="time"
+                value={editTaskTime}
+                onChange={e => setEditTaskTime(e.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="modal-cancel" onClick={closeEditTask}>Cancel</button>
+              <button type="button" className="modal-submit" onClick={saveTaskEdit} disabled={!editTaskText.trim()}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLabelPopup && (
+        <div className="modal-overlay" onClick={() => setShowLabelPopup(false)}>
+          <div className="modal-card label-popup" onClick={e => e.stopPropagation()}>
+            <h3><span className="label-popup-icon"><HandIcon /></span> Labeled reminders</h3>
+            <ul className="labels-list">
+              {labelPopupTasks.map(t => (
+                <li key={t.id} className="label-item">
+                  <span className="label-item-icon"><HandIcon /></span>
+                  <span className="label-item-text">{t.text}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="modal-actions">
+              <button type="button" className="modal-submit" onClick={() => setShowLabelPopup(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProjectModal && (
+        <div className="modal-overlay" onClick={closeProjectModal}>
+          <div className="modal-card project-card" onClick={e => e.stopPropagation()}>
+            {projectScreen === "choose" && (
+              <>
+                <h3>Project</h3>
+                <p className="project-hint">
+                  A previous project was found for <b>{username}</b>. Do you want to view it, or create a new one?
+                </p>
+                <div className="modal-actions">
+                  <button type="button" className="modal-submit" onClick={showPreviousProject} disabled={!savedProject}>
+                    View previous
+                  </button>
+                  <button type="button" className="modal-cancel" onClick={showCreateProject}>
+                    Create new
+                  </button>
+                </div>
+                <div className="modal-actions" style={{ marginTop: 0 }}>
+                  <button type="button" className="modal-cancel" onClick={closeProjectModal}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+
+            {projectScreen === "view" && (
+              <>
+                <h3>Previous project</h3>
+
+                {!savedProject ? (
+                  <p className="project-hint">No previous project found. Create a new one instead.</p>
+                ) : (
+                  <div className="project-members">
+                    {Array.from({ length: savedProject.memberCount || savedProject.members?.length || 0 }).map(
+                      (_, index) => {
+                        const m = savedProject.members?.[index] || { name: "", task: "" };
+                        const isLeader = savedProject.leaderIndex === index;
+                        return (
+                          <div key={index} className="project-member-row">
+                            <div className="project-member-header">
+                              <span>
+                                Member {index + 1} {isLeader ? "(Leader)" : ""}
+                              </span>
+                            </div>
+                            <input type="text" className="project-input" readOnly value={m.name} />
+                            <input type="text" className="project-input" readOnly value={m.task} />
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+
+                <div className="modal-actions">
+                  <button type="button" className="modal-submit" onClick={showCreateProject}>
+                    Make new
+                  </button>
+                  <button type="button" className="modal-cancel" onClick={closeProjectModal}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+
+            {projectScreen === "create" && (
+              <>
+                <h3>Project members</h3>
+
+                <div className="project-field-row">
+                  <div className="modal-field">
+                    <span>Number of members</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={10}
+                      value={projectMemberCount}
+                      onChange={e => handleProjectCountChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <p className="project-hint">
+                  Choose between 2 and 10 people, then pick exactly one as the project leader. Add a task for each member.
+                </p>
+
+                {projectError && <div className="auth-error project-error">{projectError}</div>}
+
+                <div className="project-members">
+                  {Array.from({ length: projectMemberCount }).map((_, index) => (
+                    <div key={index} className="project-member-row">
+                      <div className="project-member-header">
+                        <span>Member {index + 1}</span>
+                        <label className="project-leader-toggle">
+                          <input
+                            type="radio"
+                            name="project-leader"
+                            checked={projectLeaderIndex === index}
+                            onChange={() => setProjectLeaderIndex(index)}
+                          />
+                          Leader
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        className="project-input"
+                        placeholder="Member name"
+                        value={projectMembers[index]?.name || ""}
+                        onChange={e => updateProjectMember(index, "name", e.target.value)}
+                        maxLength={60}
+                      />
+                      <input
+                        type="text"
+                        className="project-input"
+                        placeholder="Task for this member"
+                        value={projectMembers[index]?.task || ""}
+                        onChange={e => updateProjectMember(index, "task", e.target.value)}
+                        maxLength={120}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="modal-cancel" onClick={closeProjectModal}>
+                    Close
+                  </button>
+                  <button type="button" className="modal-submit" onClick={confirmProject}>
+                    Confirm
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
