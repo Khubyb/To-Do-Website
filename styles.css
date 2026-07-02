@@ -652,7 +652,7 @@ body.light .field input[type="date"]{ color-scheme: light; }
   align-items:center;
   justify-content:center;
   position: relative;
-  padding: 24px;
+  padding: 80px 24px;
 }
 
 .auth-theme-toggle{
@@ -663,7 +663,7 @@ body.light .field input[type="date"]{ color-scheme: light; }
 
 .auth-card{
   width: 100%;
-  max-width: 380px;
+  max-width: 480px;
   background: var(--paper);
   border: 1px solid var(--rule);
   border-radius: 16px;
@@ -689,8 +689,8 @@ body.light .field input[type="date"]{ color-scheme: light; }
   margin-bottom: 20px;
 }
 .auth-logo{
-  width: 56px; height: 56px;
-  border-radius: 16px;
+  width: 72px; height: 72px;
+  border-radius: 20px;
   box-shadow: 0 14px 28px -12px var(--shadow);
 }
 .auth-brand-name{
@@ -746,7 +746,7 @@ body.light .notebook{
 .auth-stage{
   position: relative;
   width: 100%;
-  max-width: 380px;
+  max-width: 480px;
   display:flex;
   flex-direction:column;
   align-items:center;
@@ -754,9 +754,9 @@ body.light .notebook{
 
 .bot-character{
   position: absolute;
-  top: -78px;
+  top: -30px;
   right: 6px;
-  width: 96px;
+  width: 112px;
   z-index: 5;
   pointer-events: none;
   animation: botSlip 0.9s cubic-bezier(.22,.9,.32,1.1) both, botBob 3.4s ease-in-out 1s infinite;
@@ -883,7 +883,7 @@ body.light .notebook{
   box-shadow: 0 0 0 3px rgba(47,159,214,0.18);
 }
 .input-row svg{
-  width: 16px; height:16px;
+  width: 19px; height: 19px;
   flex-shrink:0;
   color: var(--text-lo);
 }
@@ -1573,4 +1573,47 @@ body.light .modal-field input[type="time"]{ color-scheme: light; }
 @media (max-width: 480px){
   .toast-stack{ top: 14px; width: calc(100% - 32px); }
   .toast{ width:100%; min-width:0; }
+}
+
+/* ---- floating add button ---- */
+.fab-add-btn {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-dim);
+  background: linear-gradient(135deg, var(--logo-a), var(--logo-b));
+  color: #06222a;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 20px -5px var(--shadow), 0 0 15px rgba(30, 200, 181, 0.4);
+  transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10;
+  outline: none;
+}
+
+.fab-add-btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  filter: brightness(1.08);
+  box-shadow: 0 14px 24px -5px var(--shadow), 0 0 20px rgba(30, 200, 181, 0.6);
+}
+
+.fab-add-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+@media (max-width: 640px) {
+  .fab-add-btn {
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+  }
 }

@@ -467,7 +467,7 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
           </div>
 
           <p className="auth-sub">
-            {mode === "login" ? "Welcome back — pick up where you left off." : "Set up an account to keep your list saved."}
+            {mode === "login" ? "Welcome to Todo — Organize your day with Todo" : "Set up an account to keep your list saved."}
           </p>
 
           <form onSubmit={handleSubmit} key={mode} className="auth-form">
@@ -1274,17 +1274,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
         </div>
         <div className="sheet">
           <div className="view-title">{navTitle}</div>
-          <div className="composer">
-            <input
-              type="text"
-              placeholder="Write down what needs doing…"
-              value=""
-              onFocus={openAdd}
-              onClick={openAdd}
-              readOnly
-            />
-            <button className="add-btn" onClick={openAdd} aria-label="Add task">+</button>
-          </div>
+
 
           <div className="toolbar">
             <div className="count">
@@ -1320,6 +1310,10 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
           <div className="footer-bar">
             <button className="clear-btn" onClick={clearCompleted}>clear completed</button>
           </div>
+        )}
+
+        {navView !== "projects" && (
+          <button className="fab-add-btn" onClick={openAdd} aria-label="Add task">+</button>
         )}
       </div>
 
