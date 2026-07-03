@@ -40,16 +40,25 @@ function saveTasks(username, tasks){
 }
 
 function projectsKey(username){ return "field-notes-project-" + username; }
-function loadProject(username){
+function loadProjects(username){
   try{
     const raw = localStorage.getItem(projectsKey(username));
-    return raw ? JSON.parse(raw) : null;
-  }catch(e){ return null; }
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    if(Array.isArray(parsed)) return parsed;
+    // migrate legacy single-project shape into the new array format
+    if(parsed && typeof parsed === "object"){
+      const migrated = [{ id: Date.now(), ...parsed }];
+      saveProjects(username, migrated);
+      return migrated;
+    }
+    return [];
+  }catch(e){ return []; }
 }
-function saveProject(username, project){
+function saveProjects(username, projects){
   try{
-    if(project){
-      localStorage.setItem(projectsKey(username), JSON.stringify(project));
+    if(projects && projects.length){
+      localStorage.setItem(projectsKey(username), JSON.stringify(projects));
     }else{
       localStorage.removeItem(projectsKey(username));
     }
@@ -88,18 +97,20 @@ function timeAgo(ts){
     " · " + d.toLocaleTimeString(undefined, { hour:"2-digit", minute:"2-digit" });
 }
 
-function dueInfo(dueDate, done){
+function dueInfo(dueDate, dueTime, done){
   if(!dueDate) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   const due = new Date(dueDate + "T00:00:00");
   const diffDays = Math.round((due - today) / 86400000);
 
-  let label, state = "";
-  if(diffDays === 0){ label = "due today"; state = "today"; }
-  else if(diffDays === 1){ label = "due tomorrow"; }
-  else if(diffDays === -1){ label = "1 day overdue"; state = "overdue"; }
-  else if(diffDays < 0){ label = Math.abs(diffDays) + " days overdue"; state = "overdue"; }
-  else { label = "due " + due.toLocaleDateString(undefined, { month:"short", day:"numeric" }); }
+  let state = "";
+  if(diffDays === 0) state = "today";
+  else if(diffDays < 0) state = "overdue";
+
+  const weekday = due.toLocaleDateString(undefined, { weekday: "short" }).toLowerCase();
+  const month = due.toLocaleDateString(undefined, { month: "short" }).toLowerCase();
+  let label = weekday + ", " + due.getDate() + " " + month;
+  if(dueTime) label += ", " + formatTime(dueTime);
 
   if(done) state = "";
   return { label, state };
@@ -114,9 +125,9 @@ function todayDateStr(){
 function formatTime(timeStr){
   if(!timeStr) return "";
   const [h, m] = timeStr.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
+  const period = h >= 12 ? "pm" : "am";
   const hour12 = ((h + 11) % 12) + 1;
-  return hour12 + ":" + String(m).padStart(2, "0") + " " + period;
+  return hour12 + ":" + String(m).padStart(2, "0") + period;
 }
 
 /* ---------------- icons ---------------- */
@@ -236,6 +247,21 @@ function CalendarIcon(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3.5" y="5" width="17" height="15.5" rx="2.2" />
       <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+function ClockIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
+function PlusIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14" />
     </svg>
   );
 }
@@ -578,7 +604,7 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
 function Task({ task, index, onToggle, onDelete, onEdit }){
   const [leaving, setLeaving] = useState(false);
   const [checked, setChecked] = useState(task.done);
-  const due = dueInfo(task.dueDate, task.done);
+  const due = dueInfo(task.dueDate, task.dueTime, task.done);
 
   const handleDelete = () => {
     setLeaving(true);
@@ -607,9 +633,12 @@ function Task({ task, index, onToggle, onDelete, onEdit }){
           {task.text}
         </div>
         <div className="task-meta">
-          <span className="task-time">added {timeAgo(task.created)}</span>
-          {due && <span className={"due " + due.state}>{due.label}</span>}
-          {task.dueTime && <span className="due-time">{formatTime(task.dueTime)}</span>}
+          {due && (
+            <span className={"due " + due.state}>
+              <span className="due-icon"><ClockIcon /></span>
+              <span className="due-label">{due.label}</span>
+            </span>
+          )}
         </div>
       </div>
       <div className="task-actions">
@@ -637,7 +666,9 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const [showEditTaskModal, setShowEditTaskModal] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskText, setEditTaskText] = useState("");
+  const [editTaskDate, setEditTaskDate] = useState("");
   const [editTaskTime, setEditTaskTime] = useState("");
+  const [editTaskIsLabel, setEditTaskIsLabel] = useState(false);
 
   const [showLabelPopup, setShowLabelPopup] = useState(false);
   const labelPopupTasks = useMemo(() => tasks.filter(t => t.label && !t.done), [tasks]);
@@ -650,11 +681,12 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const toastTimers = useRef({});
 
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [savedProject, setSavedProject] = useState(() => loadProject(username));
+  const [savedProjects, setSavedProjects] = useState(() => loadProjects(username));
   const [projectScreen, setProjectScreen] = useState(() => {
-    const proj = loadProject(username);
-    return proj ? "choose" : "create"; // choose | create | view
+    const projects = loadProjects(username);
+    return projects.length ? "list" : "create"; // list | create
   });
+  const [editingProjectId, setEditingProjectId] = useState(null);
 
   const [projectMemberCount, setProjectMemberCount] = useState(2);
   const [projectLeaderIndex, setProjectLeaderIndex] = useState(0);
@@ -662,6 +694,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const [projectMembers, setProjectMembers] = useState(() =>
     Array.from({ length: 2 }, () => ({ name: "", task: "" }))
   );
+  const MAX_PROJECTS = 10;
 
   const pushToast = (message, kind = "added") => {
     const id = Date.now() + Math.random();
@@ -727,20 +760,22 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   };
 
   const openProjectsModal = () => {
-    const proj = loadProject(username);
-    setSavedProject(proj);
+    const projects = loadProjects(username);
+    setSavedProjects(projects);
     setProjectError("");
-    setProjectScreen(proj ? "choose" : "create");
-    if(!proj) resetProjectForm(2);
+    setEditingProjectId(null);
+    setProjectScreen(projects.length ? "list" : "create");
+    if(!projects.length) resetProjectForm(2);
     setShowProjectModal(true);
   };
 
   useEffect(() => {
-    // Refresh saved project + reset the form when switching users.
-    const proj = loadProject(username);
-    setSavedProject(proj);
+    // Refresh saved projects + reset the form when switching users.
+    const projects = loadProjects(username);
+    setSavedProjects(projects);
     setProjectError("");
-    setProjectScreen(proj ? "choose" : "create");
+    setEditingProjectId(null);
+    setProjectScreen(projects.length ? "list" : "create");
     setShowProjectModal(false);
     resetProjectForm(2);
   }, [username]);
@@ -751,7 +786,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       openProjectsModal();
       return;
     }
-    if(key === "settings" || key === "labels"){
+    if(key === "settings"){
       setSidebarView(key);
       return;
     }
@@ -780,14 +815,51 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   };
 
   const showCreateProject = () => {
+    if(savedProjects.length >= MAX_PROJECTS){
+      setProjectError(`You can save up to ${MAX_PROJECTS} projects. Delete one to add a new one.`);
+      return;
+    }
     setProjectError("");
-    setProjectScreen("create");
+    setEditingProjectId(null);
     resetProjectForm(2);
+    setProjectScreen("create");
   };
 
-  const showPreviousProject = () => {
+  const showProjectList = () => {
     setProjectError("");
-    setProjectScreen("view");
+    setEditingProjectId(null);
+    setProjectScreen("list");
+  };
+
+  const showEditProjectItem = (project) => {
+    setProjectError("");
+    setEditingProjectId(project.id);
+    const count = Math.max(2, Math.min(10, project.memberCount || project.members?.length || 2));
+    setProjectMemberCount(count);
+    setProjectMembers(Array.from({ length: count }, (_, i) => {
+      const m = project.members?.[i] || { name: "", task: "" };
+      return { name: m.name || "", task: m.task || "" };
+    }));
+    setProjectLeaderIndex(Math.max(0, Math.min(count - 1, project.leaderIndex || 0)));
+    setProjectScreen("create");
+  };
+
+  const deleteProjectItem = (id) => {
+    const ok = window.confirm("Delete this project? This can't be undone.");
+    if(!ok) return;
+    const next = savedProjects.filter(p => p.id !== id);
+    saveProjects(username, next);
+    setSavedProjects(next);
+    setProjectError("");
+    if(editingProjectId === id){
+      setEditingProjectId(null);
+      setProjectScreen(next.length ? "list" : "create");
+      if(!next.length) resetProjectForm(2);
+    } else if(!next.length){
+      setProjectScreen("create");
+      resetProjectForm(2);
+    }
+    pushToast("Project deleted", "removed");
   };
 
   const confirmProject = () => {
@@ -806,26 +878,53 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       return;
     }
 
-    const projectData = {
-      memberCount: count,
-      leaderIndex,
-      members,
-      updatedAt: Date.now(),
-    };
+    let next;
+    if(editingProjectId){
+      next = savedProjects.map(p =>
+        p.id === editingProjectId
+          ? { ...p, memberCount: count, leaderIndex, members, updatedAt: Date.now() }
+          : p
+      );
+    } else {
+      if(savedProjects.length >= MAX_PROJECTS){
+        setProjectError(`You can save up to ${MAX_PROJECTS} projects. Delete one to add a new one.`);
+        return;
+      }
+      const newProject = {
+        id: Date.now() + Math.random(),
+        memberCount: count,
+        leaderIndex,
+        members,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      next = [...savedProjects, newProject];
+    }
 
-    saveProject(username, projectData);
-    setSavedProject(projectData);
-    setProjectScreen("view");
+    saveProjects(username, next);
+    setSavedProjects(next);
+    setEditingProjectId(null);
+    setProjectScreen("list");
     setProjectError("");
-    pushToast("Project saved", "added");
+    pushToast(editingProjectId ? "Project updated" : "Project saved", "added");
   };
 
   const handleProjectCountChange = (value) => {
-    let n = parseInt(value, 10);
-    if(isNaN(n)) n = 2;
-    if(n < 2) n = 2;
+    const digits = value.replace(/[^0-9]/g, "").slice(0, 2);
+    let n = digits === "" ? 0 : parseInt(digits, 10);
     if(n > 10) n = 10;
     setProjectError("");
+    setProjectMemberCount(n);
+    setProjectMembers(prev => {
+      const next = [...prev];
+      while(next.length < n) next.push({ name: "", task: "" });
+      return next.slice(0, n);
+    });
+    setProjectLeaderIndex(i => (i >= n ? 0 : i));
+  };
+
+  const handleProjectCountBlur = () => {
+    const n = Math.max(2, Math.min(10, projectMemberCount || 2));
     setProjectMemberCount(n);
     setProjectMembers(prev => {
       const next = [...prev];
@@ -926,7 +1025,9 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const openEditTask = (task) => {
     setEditingTaskId(task.id);
     setEditTaskText(task.text || "");
+    setEditTaskDate(task.dueDate || "");
     setEditTaskTime(task.dueTime || "");
+    setEditTaskIsLabel(!!task.label);
     setShowEditTaskModal(true);
   };
 
@@ -934,7 +1035,9 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setShowEditTaskModal(false);
     setEditingTaskId(null);
     setEditTaskText("");
+    setEditTaskDate("");
     setEditTaskTime("");
+    setEditTaskIsLabel(false);
   };
 
   const saveTaskEdit = () => {
@@ -942,9 +1045,9 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     if(!editingTaskId || !nextText) return;
     setTasks(prev => prev.map(t => {
       if(t.id !== editingTaskId) return t;
-      return { ...t, text: nextText, dueTime: editTaskTime || null };
+      return { ...t, text: nextText, dueDate: editTaskDate || null, dueTime: editTaskTime || null, label: editTaskIsLabel };
     }));
-    pushToast("Task updated", "added");
+    pushToast(editTaskIsLabel ? "Task updated · labeled" : "Task updated", "added");
     closeEditTask();
   };
 
@@ -1016,6 +1119,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     let base = tasks;
     if(navView === "today") base = tasks.filter(t => t.dueDate === todayStr);
     else if(navView === "upcoming") base = tasks.filter(t => t.dueDate && t.dueDate > todayStr);
+    else if(navView === "labels") base = tasks.filter(t => t.label);
 
     let list = navView === "completed" ? base.filter(t => t.done) : base.filter(t => !t.done);
 
@@ -1030,6 +1134,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const navTitle = navView === "today" ? "Today"
     : navView === "upcoming" ? "Upcoming"
     : navView === "completed" ? "Completed"
+    : navView === "labels" ? "Labels"
     : "All Tasks";
 
   const remaining = tasks.filter(t => !t.done).length;
@@ -1081,7 +1186,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
                 { key: "completed", label: "Completed", icon: <DoneIcon />, count: completedCount },
                 { key: "all", label: "All Tasks", icon: <LayersIcon />, count: tasks.length },
                 { key: "projects", label: "Projects", icon: <FolderIcon /> },
-                { key: "labels", label: "Labels", icon: <TagIcon /> },
+                { key: "labels", label: "Labels", icon: <TagIcon />, count: labelPopupTasks.length },
                 { key: "settings", label: "Settings", icon: <GearIcon /> },
               ].map((item, i) => (
                 <button
@@ -1118,36 +1223,6 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               <p className="drawer-placeholder">
                 Grouping tasks into projects is on the way — for now, all your tasks live under All Tasks.
               </p>
-            </div>
-          </React.Fragment>
-        ) : sidebarView === "labels" ? (
-          <React.Fragment>
-            <button className="drawer-back" onClick={() => setSidebarView("menu")}>
-              <BackIcon /> Back
-            </button>
-            <div className="drawer-section">
-              <h4>Labels</h4>
-              {labelPopupTasks.length === 0 ? (
-                <p className="drawer-placeholder">
-                  No labeled tasks yet. Tap the hand icon while adding a task to pin it here as a reminder.
-                </p>
-              ) : (
-                <ul className="labels-list">
-                  {labelPopupTasks.map(t => (
-                    <li key={t.id} className="label-item">
-                      <span className="label-item-icon"><HandIcon /></span>
-                      <span className="label-item-text">{t.text}</span>
-                      <button
-                        className="label-item-check"
-                        onClick={() => toggleTask(t.id)}
-                        aria-label="Mark as done"
-                      >
-                        <CheckIcon />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
           </React.Fragment>
         ) : (
@@ -1288,14 +1363,15 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
             <div className="empty">
               <div className="quill">
                 {tasks.length === 0
-                  ? "A blank page."
+                  ? "Nothing to do."
                   : navView === "today"
                     ? "Nothing due today."
                     : navView === "upcoming"
                       ? "Nothing coming up."
-                      : "Nothing here for this view."}
+                      : navView === "labels"
+                        ? "No label task."
+                        : "Nothing here for this view."}
               </div>
-              <small>{tasks.length === 0 ? "Add your first task above." : "Try a different filter or nav item."}</small>
             </div>
           ) : (
             <ul className="list">
@@ -1393,6 +1469,14 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               />
             </label>
             <label className="modal-field">
+              <span>Date</span>
+              <input
+                type="date"
+                value={editTaskDate}
+                onChange={e => setEditTaskDate(e.target.value)}
+              />
+            </label>
+            <label className="modal-field">
               <span>Time</span>
               <input
                 type="time"
@@ -1401,6 +1485,16 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               />
             </label>
             <div className="modal-actions">
+              <button
+                type="button"
+                className={"hand-btn" + (editTaskIsLabel ? " active" : "")}
+                onClick={() => setEditTaskIsLabel(v => !v)}
+                aria-pressed={editTaskIsLabel}
+                aria-label="Mark as label"
+                title="Pin as a label — it'll pop up every time you open the app"
+              >
+                <HandIcon />
+              </button>
               <button type="button" className="modal-cancel" onClick={closeEditTask}>Cancel</button>
               <button type="button" className="modal-submit" onClick={saveTaskEdit} disabled={!editTaskText.trim()}>Save</button>
             </div>
@@ -1430,60 +1524,66 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       {showProjectModal && (
         <div className="modal-overlay" onClick={closeProjectModal}>
           <div className="modal-card project-card" onClick={e => e.stopPropagation()}>
-            {projectScreen === "choose" && (
+            {projectScreen === "list" && (
               <>
-                <h3>Project</h3>
-                <p className="project-hint">
-                  A previous project was found for <b>{username}</b>. Do you want to view it, or create a new one?
-                </p>
-                <div className="modal-actions">
-                  <button type="button" className="modal-submit" onClick={showPreviousProject} disabled={!savedProject}>
-                    View previous
-                  </button>
-                  <button type="button" className="modal-cancel" onClick={showCreateProject}>
-                    Create new
+                <div className="project-list-head">
+                  <h3>Projects</h3>
+                  <button
+                    type="button"
+                    className="project-add-btn"
+                    onClick={showCreateProject}
+                    disabled={savedProjects.length >= MAX_PROJECTS}
+                    title={savedProjects.length >= MAX_PROJECTS ? `Limit of ${MAX_PROJECTS} projects reached` : "Add a new project"}
+                  >
+                    <PlusIcon /> New
                   </button>
                 </div>
-                <div className="modal-actions" style={{ marginTop: 0 }}>
-                  <button type="button" className="modal-cancel" onClick={closeProjectModal}>
-                    Close
-                  </button>
-                </div>
-              </>
-            )}
 
-            {projectScreen === "view" && (
-              <>
-                <h3>Previous project</h3>
+                {projectError && <div className="auth-error project-error">{projectError}</div>}
 
-                {!savedProject ? (
-                  <p className="project-hint">No previous project found. Create a new one instead.</p>
+                {savedProjects.length === 0 ? (
+                  <p className="project-hint">No projects yet. Create your first one.</p>
                 ) : (
-                  <div className="project-members">
-                    {Array.from({ length: savedProject.memberCount || savedProject.members?.length || 0 }).map(
-                      (_, index) => {
-                        const m = savedProject.members?.[index] || { name: "", task: "" };
-                        const isLeader = savedProject.leaderIndex === index;
-                        return (
-                          <div key={index} className="project-member-row">
-                            <div className="project-member-header">
-                              <span>
-                                Member {index + 1} {isLeader ? "(Leader)" : ""}
-                              </span>
-                            </div>
-                            <input type="text" className="project-input" readOnly value={m.name} />
-                            <input type="text" className="project-input" readOnly value={m.task} />
+                  <div className="project-list">
+                    {savedProjects.map((proj, pIndex) => (
+                      <div key={proj.id} className="project-list-item" style={{ animationDelay: (pIndex * 0.06) + "s" }}>
+                        <div className="project-list-item-header">
+                          <span className="project-list-item-title">
+                            <FolderIcon /> Project {pIndex + 1}
+                          </span>
+                          <div className="project-list-item-actions">
+                            <button type="button" className="icon-btn-sm" onClick={() => showEditProjectItem(proj)} aria-label="Edit project" title="Edit project">
+                              <EditIcon />
+                            </button>
+                            <button type="button" className="icon-btn-sm danger" onClick={() => deleteProjectItem(proj.id)} aria-label="Delete project" title="Delete project">
+                              <TrashIcon />
+                            </button>
                           </div>
-                        );
-                      }
-                    )}
+                        </div>
+                        <div className="project-list-item-meta">
+                          {(proj.memberCount || proj.members?.length || 0)} members · updated {timeAgo(proj.updatedAt || proj.createdAt || Date.now())}
+                        </div>
+                        <div className="project-members-view">
+                          {Array.from({ length: proj.memberCount || proj.members?.length || 0 }).map((_, index) => {
+                            const m = proj.members?.[index] || { name: "", task: "" };
+                            const isLeader = proj.leaderIndex === index;
+                            return (
+                              <div key={index} className="project-member-row readonly">
+                                <div className="project-member-header">
+                                  <span>Member {index + 1} {isLeader ? "(Leader)" : ""}</span>
+                                </div>
+                                <input type="text" className="project-input" readOnly value={m.name} />
+                                <input type="text" className="project-input" readOnly value={m.task} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
                 <div className="modal-actions">
-                  <button type="button" className="modal-submit" onClick={showCreateProject}>
-                    Make new
-                  </button>
                   <button type="button" className="modal-cancel" onClick={closeProjectModal}>
                     Close
                   </button>
@@ -1493,24 +1593,30 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
 
             {projectScreen === "create" && (
               <>
-                <h3>Project members</h3>
+                <div className="project-list-head">
+                  {savedProjects.length > 0 && (
+                    <button type="button" className="icon-btn-sm" onClick={showProjectList} aria-label="Back to projects" title="Back to projects">
+                      <BackIcon />
+                    </button>
+                  )}
+                  <h3>{editingProjectId ? "Edit project" : "New project"}</h3>
+                </div>
 
                 <div className="project-field-row">
                   <div className="modal-field">
                     <span>Number of members</span>
                     <input
-                      type="number"
-                      min={2}
-                      max={10}
-                      value={projectMemberCount}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={2}
+                      value={projectMemberCount === 0 ? "" : projectMemberCount}
                       onChange={e => handleProjectCountChange(e.target.value)}
+                      onFocus={e => e.target.select()}
+                      onBlur={handleProjectCountBlur}
                     />
                   </div>
                 </div>
-
-                <p className="project-hint">
-                  Choose between 2 and 10 people, then pick exactly one as the project leader. Add a task for each member.
-                </p>
 
                 {projectError && <div className="auth-error project-error">{projectError}</div>}
 
@@ -1550,11 +1656,15 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
                 </div>
 
                 <div className="modal-actions">
-                  <button type="button" className="modal-cancel" onClick={closeProjectModal}>
-                    Close
+                  <button
+                    type="button"
+                    className="modal-cancel"
+                    onClick={() => (savedProjects.length > 0 ? showProjectList() : closeProjectModal())}
+                  >
+                    {savedProjects.length > 0 ? "Cancel" : "Close"}
                   </button>
                   <button type="button" className="modal-submit" onClick={confirmProject}>
-                    Confirm
+                    {editingProjectId ? "Save changes" : "Confirm"}
                   </button>
                 </div>
               </>
