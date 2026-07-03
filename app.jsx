@@ -380,7 +380,6 @@ const GMAIL_RE = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
 
 function AuthScreen({ onLogin, theme, onToggleTheme }){
   const [mode, setMode] = useState("login"); // login | signup
-  const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -408,45 +407,40 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const name = username.trim();
+    const mail = email.trim().toLowerCase();
     const users = loadUsers();
 
-    if(!name || !password){
-      fail("Enter a username and password.");
+    if(!mail || !password){
+      fail("Enter your email and password.");
       return;
     }
 
     if(mode === "login"){
-      if(!(name in users)){
-        fail("No account with that username. Try signing up instead.");
+      if(!(mail in users)){
+        fail("No account with that email. Try signing up instead.");
         return;
       }
-      const account = users[name];
+      const account = users[mail];
       const storedPassword = typeof account === "string" ? account : account.password;
       if(storedPassword !== password){
         fail("Incorrect password.");
         return;
       }
-      onLogin(name);
+      onLogin(mail);
     } else {
       const first = firstName.trim();
       const last = lastName.trim();
-      const mail = email.trim();
 
-      if(name.length < 3){
-        fail("Username should be at least 3 characters.");
+      if(!GMAIL_RE.test(mail)){
+        fail("Email must be a valid address ending in @gmail.com.");
         return;
       }
-      if(name in users){
-        fail("That username is already taken. Try logging in instead.");
+      if(mail in users){
+        fail("That email is already registered. Try logging in instead.");
         return;
       }
       if(!first || !last){
         fail("Enter your first and last name.");
-        return;
-      }
-      if(!GMAIL_RE.test(mail)){
-        fail("Email must be a valid address ending in @gmail.com.");
         return;
       }
       if(password.length < 4){
@@ -457,9 +451,9 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
         fail("Passwords don't match.");
         return;
       }
-      users[name] = { password, firstName: first, lastName: last, email: mail };
+      users[mail] = { password, firstName: first, lastName: last, email: mail };
       saveUsers(users);
-      onLogin(name);
+      onLogin(mail);
     }
   };
 
@@ -525,30 +519,16 @@ function AuthScreen({ onLogin, theme, onToggleTheme }){
           )}
 
           <div className="input-row">
-            <UserIcon />
+            <MailIcon />
             <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              autoComplete="username"
-              maxLength={24}
+              type="email"
+              placeholder={mode === "signup" ? "you@gmail.com" : "Email"}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoComplete="email"
+              maxLength={80}
             />
           </div>
-
-          {mode === "signup" && (
-            <div className="input-row">
-              <MailIcon />
-              <input
-                type="email"
-                placeholder="you@gmail.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                autoComplete="email"
-                maxLength={80}
-              />
-            </div>
-          )}
 
           <div className="input-row">
             <LockIcon />
@@ -743,7 +723,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setEditEmail(account.email || "");
   }, [username, accountVersion]);
 
-  const displayName = account.firstName || username;
+  const displayName = account.lastName || account.firstName || username;
   const initials = ((account.firstName ? account.firstName[0] : username[0]) +
     (account.lastName ? account.lastName[0] : "")).toUpperCase();
 
@@ -1127,7 +1107,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
       if(a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
       if(a.dueDate && !b.dueDate) return -1;
       if(!a.dueDate && b.dueDate) return 1;
-      return 0;
+      return (a.createdAt || 0) - (b.createdAt || 0);
     });
   }, [tasks, navView]);
 
@@ -1173,7 +1153,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
           <div className="drawer-avatar">{initials || "?"}</div>
           <div>
             <div className="drawer-name">{account.firstName} {account.lastName}</div>
-            <div className="drawer-username">@{username}</div>
+            <div className="drawer-username">{account.email || username}</div>
           </div>
         </div>
 
@@ -1436,9 +1416,13 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               <button
                 type="button"
                 className={"hand-btn" + (modalIsLabel ? " active" : "")}
-                onClick={() => setModalIsLabel(v => !v)}
+                onClick={() => setModalIsLabel(v => {
+                  const next = !v;
+                  pushToast(next ? "Marked as label" : "Label removed", next ? "added" : "removed");
+                  return next;
+                })}
                 aria-pressed={modalIsLabel}
-                aria-label="Mark as label"
+                aria-label={modalIsLabel ? "Remove label" : "Mark as label"}
                 title="Pin as a label — it'll pop up every time you open the app"
               >
                 <HandIcon />
@@ -1488,9 +1472,13 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
               <button
                 type="button"
                 className={"hand-btn" + (editTaskIsLabel ? " active" : "")}
-                onClick={() => setEditTaskIsLabel(v => !v)}
+                onClick={() => setEditTaskIsLabel(v => {
+                  const next = !v;
+                  pushToast(next ? "Marked as label" : "Label removed", next ? "added" : "removed");
+                  return next;
+                })}
                 aria-pressed={editTaskIsLabel}
-                aria-label="Mark as label"
+                aria-label={editTaskIsLabel ? "Remove label" : "Mark as label"}
                 title="Pin as a label — it'll pop up every time you open the app"
               >
                 <HandIcon />

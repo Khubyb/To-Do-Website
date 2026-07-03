@@ -585,7 +585,7 @@ body.light .field input[type="date"]{ color-scheme: light; }
   color: var(--rust);
   border-color: var(--rust-dim);
   background: rgba(192,104,90,0.1);
-  animation: due-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both, due-shake 3.5s ease-in-out 0.5s infinite;
+  animation: due-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 @keyframes due-pop{
@@ -595,13 +595,6 @@ body.light .field input[type="date"]{ color-scheme: light; }
 @keyframes due-glow-accent{
   0%, 100%{ box-shadow: 0 0 0 0 rgba(47,159,214,0); }
   50%{ box-shadow: 0 0 0 4px rgba(47,159,214,0.12); }
-}
-@keyframes due-shake{
-  0%, 92%, 100%{ transform: translateY(0) rotate(0); }
-  93%{ transform: translateY(0) rotate(-3deg); }
-  95%{ transform: translateY(0) rotate(3deg); }
-  97%{ transform: translateY(0) rotate(-2deg); }
-  99%{ transform: translateY(0) rotate(0); }
 }
 
 .due-time{
@@ -1936,9 +1929,16 @@ body.light .modal-field input[type="time"]{ color-scheme: light; }
   color: #06222a;
 }
 .hand-btn.active{
-  background: linear-gradient(135deg, var(--logo-a), var(--logo-b));
+  background: #06222a;
   border-color: transparent;
-  color: #06222a;
+  color: var(--logo-b);
+  box-shadow: 0 0 0 2px var(--logo-b), 0 0 14px rgba(47,159,214,0.6);
+  transform: scale(1.06);
+}
+.hand-btn.active:hover{
+  filter: none;
+  background: #06222a;
+  color: var(--logo-b);
 }
 
 .project-add-btn{
