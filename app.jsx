@@ -698,15 +698,16 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
 
-  const [editUsername, setEditUsername] = useState("");
-  const [usernameError, setUsernameError] = useState("");
-  const [usernameSuccess, setUsernameSuccess] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [nameSuccess, setNameSuccess] = useState("");
 
   const [editEmail, setEditEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [emailSuccess, setEmailSuccess] = useState("");
 
-  const [showUsernameFields, setShowUsernameFields] = useState(false);
+  const [showNameFields, setShowNameFields] = useState(false);
   const [showEmailFields, setShowEmailFields] = useState(false);
   const [showPasswordFields, setShowPasswordFields] = useState(false);
 
@@ -719,7 +720,8 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
   }, [username, accountVersion]);
 
   useEffect(() => {
-    setEditUsername("");
+    setEditFirstName(account.firstName || "");
+    setEditLastName(account.lastName || "");
     setEditEmail(account.email || "");
   }, [username, accountVersion]);
 
@@ -781,11 +783,11 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setConfirmNewPassword("");
     setPwError("");
     setPwSuccess("");
-    setUsernameError("");
-    setUsernameSuccess("");
+    setNameError("");
+    setNameSuccess("");
     setEmailError("");
     setEmailSuccess("");
-    setShowUsernameFields(false);
+    setShowNameFields(false);
     setShowEmailFields(false);
     setShowPasswordFields(false);
   };
@@ -953,34 +955,24 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
     setConfirmNewPassword("");
   };
 
-  const changeUsername = (e) => {
+  const changeName = (e) => {
     e.preventDefault();
-    setUsernameError("");
-    setUsernameSuccess("");
-    const next = editUsername.trim();
+    setNameError("");
+    setNameSuccess("");
+    const first = editFirstName.trim();
+    const last = editLastName.trim();
 
-    if(next.length < 3){
-      setUsernameError("Username should be at least 3 characters.");
-      return;
-    }
-    if(next === username){
-      setUsernameError("That's already your username.");
+    if(!first || !last){
+      setNameError("Enter your first and last name.");
       return;
     }
     const users = loadUsers();
-    if(next in users){
-      setUsernameError("That username is already taken.");
-      return;
-    }
-    const ok = renameUserKey(username, next);
-    if(!ok){
-      setUsernameError("Couldn't update username. Try again.");
-      return;
-    }
-    saveSession(next);
-    setUsernameSuccess("Username updated.");
+    const acc = users[username];
+    const base = acc && typeof acc === "object" ? acc : {};
+    users[username] = { ...base, firstName: first, lastName: last };
+    saveUsers(users);
+    setNameSuccess("Name updated.");
     setAccountVersion(v => v + 1);
-    if(onUsernameChange) onUsernameChange(next);
   };
 
   const changeEmail = (e) => {
@@ -1164,7 +1156,7 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
                 { key: "today", label: "Today", icon: <CheckSquareIcon />, count: todayCount },
                 { key: "upcoming", label: "Upcoming", icon: <CalendarIcon />, count: upcomingCount },
                 { key: "completed", label: "Completed", icon: <DoneIcon />, count: completedCount },
-                { key: "all", label: "All Tasks", icon: <LayersIcon />, count: tasks.length },
+                { key: "all", label: "All Tasks", icon: <LayersIcon />, count: remaining },
                 { key: "projects", label: "Projects", icon: <FolderIcon /> },
                 { key: "labels", label: "Labels", icon: <TagIcon />, count: labelPopupTasks.length },
                 { key: "settings", label: "Settings", icon: <GearIcon /> },
@@ -1212,25 +1204,33 @@ function TodoScreen({ username, theme, onToggleTheme, onLogout, onUsernameChange
             </button>
 
             <div className="drawer-section">
-              <h4>Username</h4>
-              {!showUsernameFields ? (
-                <button className="drawer-row-btn accent" onClick={() => setShowUsernameFields(true)}>
+              <h4>Name</h4>
+              {!showNameFields ? (
+                <button className="drawer-row-btn accent" onClick={() => setShowNameFields(true)}>
                   <UserIcon />
-                  Update username
+                  Update name
                 </button>
               ) : (
-                <form onSubmit={changeUsername} className="drawer-form">
+                <form onSubmit={changeName} className="drawer-form">
                   <input
                     type="text"
-                    placeholder="Username"
-                    value={editUsername || username}
-                    onChange={e => { setEditUsername(e.target.value); setUsernameError(""); setUsernameSuccess(""); }}
-                    autoComplete="username"
-                    maxLength={24}
+                    placeholder="First name"
+                    value={editFirstName}
+                    onChange={e => { setEditFirstName(e.target.value); setNameError(""); setNameSuccess(""); }}
+                    autoComplete="given-name"
+                    maxLength={40}
                     autoFocus
                   />
-                  {usernameError && <div className="drawer-error">{usernameError}</div>}
-                  {usernameSuccess && <div className="drawer-success">{usernameSuccess}</div>}
+                  <input
+                    type="text"
+                    placeholder="Last name"
+                    value={editLastName}
+                    onChange={e => { setEditLastName(e.target.value); setNameError(""); setNameSuccess(""); }}
+                    autoComplete="family-name"
+                    maxLength={40}
+                  />
+                  {nameError && <div className="drawer-error">{nameError}</div>}
+                  {nameSuccess && <div className="drawer-success">{nameSuccess}</div>}
                   <button type="submit" className="drawer-submit">Confirm</button>
                 </form>
               )}
